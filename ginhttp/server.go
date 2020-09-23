@@ -10,6 +10,7 @@ package ginhttp
 
 import (
 	"bytes"
+	"github.com/opentracing/opentracing-go/log"
 	"net/http"
 	"net/url"
 
@@ -125,8 +126,13 @@ func Middleware(tr opentracing.Tracer, options ...MWOption) gin.HandlerFunc {
 			ext.Error.Set(sp, true)
 		}
 		if len(c.Errors) > 0 {
+			ext.Error.Set(sp, true)
 			for _, err := range c.Errors {
-				ext.LogError(sp, err)
+				ef := []log.Field{
+					log.Event("error"),
+					log.Error(err),
+				}
+				sp.LogFields(ef...)
 			}
 		}
 
