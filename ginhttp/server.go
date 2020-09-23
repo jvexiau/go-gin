@@ -123,10 +123,10 @@ func Middleware(tr opentracing.Tracer, options ...MWOption) gin.HandlerFunc {
 		ext.HTTPStatusCode.Set(sp, uint16(c.Writer.Status()))
 		if c.Writer.Status() >= http.StatusInternalServerError {
 			ext.Error.Set(sp, true)
-		}
-		if len(c.Errors) > 0 {
-			for _, err := range c.Errors {
-				ext.LogError(sp, err)
+			if len(c.Errors) > 0 {
+				for _, err := range c.Errors {
+					ext.LogError(sp, err)
+				}
 			}
 		}
 
