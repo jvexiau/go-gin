@@ -99,6 +99,9 @@ func Middleware(tr opentracing.Tracer, options ...MWOption) gin.HandlerFunc {
 		c.Next()
 
 		ext.HTTPStatusCode.Set(sp, uint16(c.Writer.Status()))
+		if c.Writer.Status() >= http.StatusInternalServerError {
+			ext.Error.Set(sp, true)
+		}
 		sp.Finish()
 	}
 }
