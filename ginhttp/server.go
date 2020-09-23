@@ -9,6 +9,7 @@
 package ginhttp
 
 import (
+	"bytes"
 	"net/http"
 	"net/url"
 
@@ -23,6 +24,7 @@ type mwOptions struct {
 	opNameFunc    func(r *http.Request) string
 	spanObserver  func(span opentracing.Span, r *http.Request)
 	urlTagFunc    func(u *url.URL) string
+	logResponse   bool
 	componentName string
 }
 
@@ -62,6 +64,22 @@ func MWURLTagFunc(f func(u *url.URL) string) MWOption {
 	}
 }
 
+func MWLogResponse(b bool) MWOption {
+	return func(options *mwOptions) {
+		options.logResponse = b
+	}
+}
+
+type bodyLogWriter struct {
+	gin.ResponseWriter
+	body *bytes.Buffer
+}
+
+func (w bodyLogWriter) Write(b []byte) (int, error) {
+	w.body.Write(b)
+	return w.ResponseWriter.Write(b)
+}
+
 // Middleware is a gin native version of the equivalent middleware in:
 //   https://github.com/opentracing-contrib/go-stdlib/
 func Middleware(tr opentracing.Tracer, options ...MWOption) gin.HandlerFunc {
@@ -73,6 +91,7 @@ func Middleware(tr opentracing.Tracer, options ...MWOption) gin.HandlerFunc {
 		urlTagFunc: func(u *url.URL) string {
 			return u.String()
 		},
+		logResponse: true,
 	}
 	for _, opt := range options {
 		opt(&opts)
@@ -96,11 +115,23 @@ func Middleware(tr opentracing.Tracer, options ...MWOption) gin.HandlerFunc {
 		c.Request = c.Request.WithContext(
 			opentracing.ContextWithSpan(c.Request.Context(), sp))
 
+		// capture response in case of invalid response
+		blw := &bodyLogWriter{body: bytes.NewBufferString(""), ResponseWriter: c.Writer}
+		c.Writer = blw
 		c.Next()
 
 		ext.HTTPStatusCode.Set(sp, uint16(c.Writer.Status()))
 		if c.Writer.Status() >= http.StatusInternalServerError {
 			ext.Error.Set(sp, true)
+		}
+		if len(c.Errors) > 0 {
+			for _, err := range c.Errors {
+				ext.LogError(sp, err)
+			}
+		}
+
+		if opts.logResponse && c.Writer.Status() >= http.StatusBadRequest {
+			sp.SetTag("http.response", blw.body.String())
 		}
 		sp.Finish()
 	}
