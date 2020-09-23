@@ -118,37 +118,20 @@ func Middleware(tr opentracing.Tracer, options ...MWOption) gin.HandlerFunc {
 		// capture response in case of invalid response
 		blw := &bodyLogWriter{body: bytes.NewBufferString(""), ResponseWriter: c.Writer}
 		c.Writer = blw
-
-		defer func() {
-			panicErr := recover()
-			didPanic := panicErr != nil
-
-			if didPanic {
-				ext.Error.Set(sp, true)
-			}
-			sp.Finish()
-
-			ext.HTTPStatusCode.Set(sp, uint16(c.Writer.Status()))
-			if c.Writer.Status() >= http.StatusInternalServerError {
-				ext.Error.Set(sp, true)
-				if len(c.Errors) > 0 {
-					for _, err := range c.Errors {
-						ext.LogError(sp, err)
-					}
-				}
-			}
-
-			if opts.logResponse && c.Writer.Status() >= http.StatusBadRequest {
-				sp.SetTag("http.response", blw.body.String())
-			}
-			sp.Finish()
-
-			if didPanic {
-				panic(panicErr)
-			}
-		}()
-
 		c.Next()
 
+		ext.HTTPStatusCode.Set(sp, uint16(c.Writer.Status()))
+		if c.Writer.Status() >= http.StatusInternalServerError {
+			ext.Error.Set(sp, true)
+		}
+
+		if len(c.Errors) > 0 {
+			sp.SetTag("gin.errors", c.Errors.String())
+		}
+
+		if opts.logResponse && c.Writer.Status() >= http.StatusBadRequest {
+			sp.SetTag("http.response", blw.body.String())
+		}
+		sp.Finish()
 	}
 }
